@@ -1,0 +1,325 @@
+---
+title: "Importing and Managing Financial Data in R"
+output:
+  html_document:
+    df_print: paged
+  html_notebook: default
+  pdf_document: default
+---
+# Data importing
+## getSymbols
+Search for symbols at the sources websites
+
+Sources:
+- Yahoo! Finance
+- Google Finance
+- FRED
+- Oanda
+- CSV
+
+```{r}
+library(quantmod)
+symbls = c("AAPL")
+getSymbols(symbls, auto.assign = T)
+head(AAPL, n=2)
+str(AAPL)
+```
+
+### Setting getSymbols default arguments
+
+```{r}
+# do not persist across R sessions
+setDefaults(getSymbols, src="yahoo")
+getDefaults()
+getDefaults(getSymbols)
+args(getSymbols.yahoo)
+```
+
+### Syntactically invalid names
+
+```{r}
+# getSymbols("000001.SS", auto.assign = T)
+# str(000001.SS)
+
+# getSymbols(`000001.SS`, auto.assign = T)
+# str(`000001.SS`)
+
+SSE <- getSymbols("000001.SS", auto.assign = F)
+str(SSE)
+
+setSymbolLookup(SSE = list(name = "000001.SS"))
+getSymbols("SSE", auto.assign = T)
+str(SSE)
+
+saveSymbolLookup("my_symbl_lookup")
+loadSymbolLookup("my_symbl_lookup")
+```
+
+```{r}
+# Create BRK.A object
+BRK.A = getSymbols("BRK-A", auto.assign=F)
+
+# Create col_names object with the column names of BRK.A
+col_names <- colnames(BRK.A)
+
+# Set BRK.A column names to syntactically valid names
+colnames(BRK.A) <- make.names(col_names, unique=T)
+```
+
+## Quandl
+
+```{r}
+# Load the Quandl package
+# library(Quandl)
+# 
+# # Import GDP data from FRED
+# gdp <- Quandl("FRED/GDP")
+# 
+# # Look at the structure of the object returned by Quandl
+# str(gdp)
+# 
+# 
+# gdp <- Quandl("FRED/GDP", type = "xts")
+# str(gdp)
+```
+
+## Google Finance
+
+```{r}
+# # Create an object containing the Pfizer ticker symbol
+# symbol <- "AAPL"
+# 
+# # Use getSymbols to import the data
+# getSymbols(symbol, src="google", auto.assign=T)
+# 
+# 
+# # Look at the first few rows of data
+# head(PFE)
+```
+
+## Oanda
+
+```{r}
+# Create a currency_pair object
+currency_pair <- "GBP/CAD"
+
+# Load British Pound to Canadian Dollar exchange rate data
+getSymbols(currency_pair, auto.assign=T, src="oanda")
+
+# Examine object using str()
+str(GBPCAD)
+
+# Try to load data from 190 days ago
+getSymbols(currency_pair, from = Sys.Date() - 190, to = Sys.Date(), src = "oanda")
+```
+
+## FRED
+
+```{r}
+# Create a series_name object
+series_name <- "UNRATE"
+
+# Load the data using getSymbols
+getSymbols(series_name, src="FRED")
+
+# Create a quandl_code object
+# quandl_code <- "FRED/UNRATE"
+
+# Load the data using Quandl
+# unemploy_rate <- Quandl(quandl_code)
+```
+
+## Importing text files
+
+```{r}
+?read.zoo()
+# # Read data with read.csv
+# une_data <- read.csv("UNE.csv", nrows = 5)
+# 
+# # Look at the structure of une_data
+# str(une_data)
+# 
+# # Read data with read.zoo, specifying index columns
+# une_zoo <- read.zoo("UNE.csv", index.column = c("Date", "Time"), sep = ",", header = T)
+# 
+# # Look at first few rows of data
+# head(une_zoo)
+```
+
+
+
+# Data manipulation
+## Extracting Columns
+
+```{r}
+head(AAPL, n=2)
+aapl_close <- Cl(AAPL)
+head(aapl_close, n=2)
+
+aapl_volume <- Vo(AAPL)
+head(aapl_volume, n=2)
+
+aapl_ohlc <- OHLC(AAPL)
+head(aapl_ohlc, n=2)
+
+```
+
+```{r}
+# Download CME data for CL and BZ as an xts object
+oil_data <- Quandl(code = c("CME/CLH2016", "CME/BZH2016"), type = "xts")
+
+# Look at the column names of the oil_data object
+colnames(oil_data)
+
+# Extract the Open price for CLH2016
+cl_open <- getPrice(oil_data, symbol = "CLH2016", prefer = "Open$")
+
+# Look at January, 2016 using xts' ISO-8601 subsetting
+cl_open["2016-01"]
+```
+
+## Multiple Instruments (environment)
+
+```{r}
+data_env <- new.env()
+getSymbols(c("SPY", "QQQ"), env = data_env, auto.assign = T)
+data_env
+head(data_env$SPY, n=2)
+
+
+adjusted_list <- lapply(data_env, Ad)
+adjusted <- do.call(merge,adjusted_list)
+head(adjusted, n=2)
+```
+
+## Regularising irregular data
+
+```{r}
+from_date <- as.Date("2017-01-01")
+to_date <- as.Date("2017-12-01")
+months <- seq(from_date,
+              to_date, 
+              by = "month")
+head(months, n=3)
+
+regular_xts <- xts(seq_along(months), 
+                   order.by = months)
+start(regular_xts)
+end(regular_xts)
+
+days <- seq(from = start(regular_xts), 
+            to = end(regular_xts), 
+            by = "day")
+
+# zero-width xts object
+zero_width_xts <- xts(,order.by = months)
+zero_width_xts
+
+irregular <- xts(rnorm(5), order.by = from_date+seq(0,300, length.out = 5))
+irregular
+
+date_seq <- seq(from = start(irregular), 
+            to = end(irregular), 
+            by = "month")
+
+new_regular_xts <- xts(,order.by = date_seq)
+new_regular_xts <- merge(irregular, new_regular_xts)
+head(new_regular_xts, h=5)
+```
+
+## Timezones
+
+```{r}
+# # Create merged object with a Europe/London timezone
+# tz_london <- merge(london, chicago)
+# 
+# # Look at tz_london structure
+# str(tz_london)
+# 
+# # Create merged object with a America/Chicago timezone
+# tz_chicago <- merge(chicago, london)
+# 
+# # Look at tz_chicago structure
+# str(tz_chicago)
+```
+
+```{r}
+# # Create a regular date-time sequence
+# regular_index <- seq(as.POSIXct("2010-01-04 09:00"), as.POSIXct("2010-01-08 16:00"), by = "30 min")
+# 
+# # Create a zero-width xts object
+# regular_xts <- xts(order.by=regular_index)
+# 
+# # Merge irregular_xts and regular_xts, filling NA with their previous value
+# merged_xts <- merge(irregular_xts, regular_xts, fill=na.locf)
+# 
+# # Subset to trading day (9AM - 4PM)
+# trade_day <- merged_xts['T09:00/T16:00']
+```
+
+```{r}
+# # Split trade_day into days
+# daily_list <- split(trade_day , f = "days")
+# 
+# # Use lapply to call na.locf for each day in daily_list
+# daily_filled <- lapply(daily_list, FUN = na.locf)
+# 
+# # Use do.call to rbind the results
+# filled_by_trade_day <- do.call(rbind, daily_filled)
+```
+
+```{r}
+# # Convert raw prices to 5-second prices
+# xts_5sec <- to.period(intraday_xts, period = "seconds", k = 5)
+# 
+# # Convert raw prices to 10-minute prices
+# xts_10min <- to.period(intraday_xts, period = "minutes", k=10)
+# 
+# # Convert raw prices to 1-hour prices
+# xts_1hour <- to.period(intraday_xts, period = "hours", k = 1 )
+```
+
+## Weirdness
+- Missing values (see xts-zoo notebook)
+- Stock splits and dividends
+```{r}
+getSymbols("MSFT", auto.assign = T)
+msft_adjusted <- adjustOHLC(MSFT)
+
+?adjRatios
+```
+
+```{r}
+# Download AAPL split data
+splits <- getSplits("AAPL")
+
+# Print the splits object
+splits
+
+# Download AAPL dividend data
+dividends <- getDividends("AAPL")
+
+# Look at the first few rows of dividends
+head(dividends)
+
+# Download unadjusted AAPL dividend data
+raw_dividends = getDividends("AAPL", split.adjust = F)
+
+# Look at the first few rows of raw_dividends
+head(raw_dividends)
+```
+
+```{r}
+# Calculate split and dividend adjustment ratios
+ratios <- adjRatios(splits = splits, dividends = raw_dividends, close = Cl(AAPL))
+
+# Calculate adjusted close for AAPL
+aapl_adjusted <- Cl(AAPL) * ratios[, "Split"] * ratios[, "Div"]
+
+# Look at first few rows of Yahoo adjusted close
+head(Ad(AAPL))
+
+# Look at first few rows of aapl_adjusted
+head(aapl_adjusted)
+```
+

@@ -1,0 +1,771 @@
+---
+title: "Introduction to Portfolio Analysis in R"
+output:
+  html_document:
+    df_print: paged
+---
+
+## Intro
+
+- Avoid large losses
+-- diversify portfolio
+-- use backtesting
+
+## Portfolio Weights and Returns
+
+```{r}
+library(quantmod)
+symbls <- c("AAPL", "MSFT", "^GSPC")
+getSymbols(symbls, auto.assign = T)
+```
+
+Ratio expressing the value of the share price of Apple in terms of the share price of Microsoft
+
+Note that where the value of the ratio is larger than one, the Apple outperforms Microsoft and vice versa.
+
+```{r}
+aapl_msft = AAPL$AAPL.Adjusted/MSFT$MSFT.Adjusted
+
+
+plot.zoo(aapl_msft)
+abline(h=1)
+```
+
+### Asset Weight
+
+- Equal weighting
+```{r}
+N = 2
+weights <- rep(1/N,N)
+weights
+barplot(weights, ylim = 0:1)
+```
+
+- Market Cap weighting
+
+```{r}
+# Define the vector values
+values <- c(4000, 6000)
+
+# Define the vector weights
+weights <- values/sum(values)
+
+# Print the resulting weights
+## Should sum up to unity
+weights
+barplot(weights, ylim = 0:1)
+```
+
+### Portfolio Returns
+$$
+Portfolio Returns = w_1R_1 + w_2R_2 + ... + w_nR_n
+$$
+```{r}
+# Vector of initial value of the assets
+in_values <- c(1000,5000,2000)
+  
+# Vector of final values of the assets
+fin_values <- c(1100, 4500, 3000)
+
+# Weights as the proportion of total value invested in each assets
+weights <- in_values/sum(in_values)
+weights
+# Vector of simple returns of the assets 
+returns <- (fin_values - in_values)/in_values
+returns
+# Compute portfolio return using the portfolio return formula
+preturns <- sum(weights*returns)
+preturns
+```
+#### From simple to gross and multi-period returns
+
+The simple return $R$
+expresses the percentage change in value of an investment. The corresponding so-called "gross" return is defined as the future value of 1 USD invested in the asset for one period, and is thus equal to $1+R$
+
+
+The gross return over two periods is obtained similarly. Let $R_1$ be the return in the first period and $R_2$ the return in the second period. Then the end-value of a 1 USD investment is $(1+R_1)∗(1+R_2)$
+
+
+The corresponding simple return over those two periods is: $(1+R_1)∗(1+R_2)−1$
+
+
+Suppose that you have an investment horizon of two periods. In the first period you make a 10% return. But in the second period you take a loss of 5%. 
+
+```{r}
+(1+.1)*(1-.05)*1000
+```
+
+#### The asymmetric impact of gains and losses
+
+It is important to be aware of the fact that a positive and negative return of the same relative magnitude do not compensate each other in terms of terminal wealth. Mathematically, this can be seen from the identity $(1+x)∗(1−x)=1−x^2$, which is less than one. A 50% loss is thus not compensated by a 50% gain. After a loss of 50%, what is the return needed to be at par again?
+
+```{r}
+(1-.5)*(1+.5)
+1-.5^2
+(1-.5)*(1+1)
+```
+
+### PerformanceAnalytics
+
+```{r}
+library(PerformanceAnalytics)
+prices <- merge(AAPL$AAPL.Adjusted,
+                MSFT$MSFT.Adjusted)
+colnames(prices) <- c("AAPL", "MSFT")
+returns <- Return.calculate(prices)
+returns <- returns[(-1),]
+head(returns, n=2)
+```
+
+### Buy-and-hold versus (daily) rebalancing
+
+Your portfolio approach will be to invest half of your budget in Apple stock, and the other half of your budget in Microsoft stock. Over time, the portfolio weights will change. You will have two choices as an investor. The first choice is to be passive and not trade any further. This is called a buy and hold strategy. The second choice is to buy and trade at the close of each day that results in a rebalance of the portfolio such that your portfolio is equally invested in shares of Microsoft and Apple. This is a rebalanced portfolio. 
+
+- Set initial weigths and do not intervene
+- Actively change weights
+
+```{r}
+# Create the weights
+eq_weights <- c(0.5, 0.5)
+
+# Create a portfolio using buy and hold
+pf_bh <- Return.portfolio(R = returns, weights = eq_weights)
+
+# Create a portfolio rebalancing monthly 
+pf_rebal <- Return.portfolio(R = returns, weights = eq_weights, rebalance_on="months")
+
+
+# Plot the time-series
+# par(mfrow = c(2, 1), mar=c(2, 4, 2, 2))
+plot.zoo(pf_bh)
+plot.zoo(pf_rebal)
+```
+```{r}
+# Create the weights
+eq_weights <- c(.5,.5)
+
+# Create a portfolio using buy and hold
+pf_bh <- Return.portfolio(returns, weights = eq_weights, verbose=T )
+
+# Create a portfolio that rebalances monthly
+pf_rebal <- Return.portfolio(returns, weights = eq_weights, rebalance_on = "months", verbose=T )
+
+# Create eop_weight_bh
+eop_weight_bh <- pf_bh$EOP.Weight
+
+# Create eop_weight_rebal
+eop_weight_rebal <- pf_rebal$EOP.Weight
+
+# Plot end of period weights
+# par(mfrow = c(2, 1), mar=c(2, 4, 2, 2))
+plot.zoo(eop_weight_bh$AAPL)
+plot.zoo(eop_weight_rebal$AAPL)
+
+plot.zoo(eop_weight_bh$MSFT)
+plot.zoo(eop_weight_rebal$MSFT)
+```
+
+### Reward vs. Risk and the Sharpe Ration
+
+- Mean return
+
+$$
+ \hat{\mu} = \frac{R_1+R_2+...+R_T}{T}
+$$
+- De-meaned return
+
+$$
+ R_i - \hat{\mu}
+$$
+- Portfolio variance
+
+$$
+ \hat{\sigma}^2 = \frac{(R_1 - \hat{\mu})^2+(R_2 - \hat{\mu})^2+...+(R_T - \hat{\mu})^2}{T-1}
+$$
+- Portfolio volatility (standard deviation)
+
+$$
+ \hat{\sigma} = \sqrt{\hat{\sigma}^2}
+$$
+- Geometric Mean Return
+
+$$
+ GeometricMean = \bigg[ (1+R_1)*(1+R_1) *... * (1+R_T) \bigg]^{\frac{1}{T}} -1
+$$
+-- Example: +50% and -50% return
+
+$$
+GeometricMean = \bigg[ (1+0.5)*(1-0.5) \bigg]^{\frac{1}{2}} -1
+\\
+= 0.75^{\frac{1}{2}} - 1
+\\
+= -13.4\%
+$$
+
+```{r}
+sp500 <- GSPC$GSPC.Adjusted
+colnames(sp500) <- c("GSPC")
+sp500_monthly <- to.monthly(sp500, OHLC=F)
+
+head(sp500_monthly, n=2)
+
+sp500_returns <- Return.calculate(sp500_monthly)
+sp500_returns <- sp500_returns[-1]
+# Time series plot
+plot.zoo(sp500_returns)
+
+# Produce the year x month table
+table.CalendarReturns(sp500_returns)
+```
+
+```{r}
+# Compute the mean monthly returns
+mean(sp500_returns)
+
+# Compute the geometric mean of monthly returns
+mean.geometric(sp500_returns)
+
+# Compute the standard deviation
+sd(sp500_returns)
+```
+
+- (Annualized) Sharpe Ration
+$R_p$ = Portfolio Return
+$R_f$ = Risk Free Rate
+$\sigma$ = Portfolio Volatility
+$$
+SharpeRation = \frac{R_p - R_f}{\sigma_p}
+$$
+
+```{r}
+random <- runif(length(sp500_returns), min =0, max = 0.5)*0.00001 + 0.0001
+rf <- xts(random, order.by = index(sp500_returns))
+
+# Compute the annualized risk free rate
+annualized_rf <- (1 + rf)^12 - 1
+
+# Plot the annualized risk free rate
+plot.zoo(annualized_rf)
+
+# Compute the series of excess portfolio returns 
+sp500_excess <- sp500_returns - rf
+
+# Compare the mean
+mean(sp500_excess)
+mean(sp500_returns)
+
+# Compute the Sharpe ratio
+sp500_sharpe <- mean(sp500_excess) / sd(sp500_returns)
+sp500_sharpe
+```
+```{r}
+# Compute the annualized mean
+ar <- Return.annualized.excess(sp500_returns, Rb=0)
+ar
+# Compute the annualized standard deviation
+astd <- StdDev.annualized(sp500_returns)
+astd
+# Compute the annualized Sharpe ratio: ann_sharpe
+ann_sharpe <- ar/astd
+ann_sharpe
+
+# Compute all of the above at once using table.AnnualizedReturns()
+table.AnnualizedReturns(sp500_returns)
+
+```
+
+### Rolling Performance
+
+```{r}
+# Calculate the mean, volatility, and sharpe ratio of sp500_returns
+returns_ann <- Return.annualized.excess(sp500_returns, 0)
+sd_ann <- StdDev.annualized(sp500_returns)
+sharpe_ann <- SharpeRatio.annualized(sp500_returns, rf)
+
+# Plotting the 12-month rolling annualized mean
+chart.RollingPerformance(R = sp500_returns, width = 12, FUN = "Return.annualized.excess", Rb=0)
+abline(h = returns_ann)
+
+# Plotting the 12-month rolling annualized standard deviation
+chart.RollingPerformance(R = sp500_returns, width = 12, FUN = "StdDev.annualized")
+abline(h = sd_ann)
+
+# Plotting the 12-month rolling annualized Sharpe ratio
+chart.RollingPerformance(R = sp500_returns, Rf=rf, width = 12, FUN = "SharpeRatio.annualized")
+abline(h = sharpe_ann)
+```
+```{r}
+# Fill in window for 2008
+sp500_2008 <- window(sp500_returns, start = "2008-01-01", end = "2008-12-31")
+
+# Create window for 2014
+sp500_2014 <- window(sp500_returns, start = "2014-01-01", end = "2014-12-31")
+
+# Plotting settings
+# par(mfrow = c(1, 2) , mar=c(3, 2, 2, 2))
+names(sp500_2008) <- "sp500_2008"
+names(sp500_2014) <- "sp500_2014"
+
+# Plot histogram of 2008
+chart.Histogram(sp500_2008, methods = c("add.density", "add.normal"))
+
+# Plot histogram of 2014
+chart.Histogram(sp500_2014, methods = c("add.density", "add.normal"))
+```
+
+- Semi-Deviation (subset of returns below the mean)
+
+$$
+SemiDev = \sqrt{\frac{(Z_1-\mu)^2+(Z_2-\mu)^2+...+(Z_n-\mu)^2}{n}}
+$$
+```{r}
+# Calculate the SemiDeviation
+SemiDeviation(sp500_returns)
+```
+
+
+- Value-at-Risk & Expected Shortfall
+```{r}
+# Calculate the value at risk
+VaR(sp500_returns, 0.025)
+VaR(sp500_returns, 0.05)
+
+
+# Calculate the expected shortfall
+ES(sp500_returns, 0.025)
+ES(sp500_returns, 0.05)
+```
+
+- Skewness
+```{r}
+skewness(sp500_returns)
+```
+
+- Kurtosis
+```{r}
+kurtosis(sp500_returns)
+```
+
+#### Drawdowns due to buying high, selling low
+
+The volatility, semi-deviation, value-at-risk, and expected shortfall are all measures that describe risk over 1 period. These metrics do not do a great job at describing the worst case risk of buying at a peak, and selling at a trough. This sort of risk can be quantified by analyzing the portfolio's drawdowns, or peak-to-trough decline in cumulative returns.
+
+```{r}
+# Table of drawdowns
+# table.Drawdowns(sp500_returns, drop)
+
+# Plot of drawdowns
+chart.Drawdown(sp500_returns)
+```
+
+## Portfolio Performance Evaluation
+
+Return --> Random Variable --> Expectation
+
+#### Portfolio return
+
+$$
+ PortfolioReturn = w_1R_1+w_2R_2+...+w_nR_n
+ \\
+ \mathbf{E}[P] = w_1\mathbf{E}[R_1] + w_2\mathbf{E}[R_2] + ... + w_n\mathbf{E}[R_n] 
+$$
+#### Variance of Portfolio Return
+$$
+ var(P) = \mathbf{E}\Big[\big(P - \mathbf{E}[P]^2\big)\Big] = w_1^2* var(R_1) \\ 
+ + w_2 * var(R_2) \\
+ + 2 * w_1 * w_2 * cov(R_1,R_2)
+$$
+#### Covariance between $R_!$ and $R_2$
+$$
+cov(R_1,R_2) = \mathbf{E}\Big[\big(R_1 - \mathbf{E}[R_1]\big)\big(R_2 - \mathbf{E}[R_2]\big)\Big] \\
+= StdDev(R_1) * StdDev(R_2) * corr(R_1,R_2)
+$$
+## Drivers of Performance
+
+### Driver 1: The assets' individual performance
+
+```{r}
+returns_6040 = 0.6 * returns$AAPL + 0.4 * returns$MSFT
+
+all.equal(mean(returns_6040), 0.6 * mean(returns$AAPL) + 0.4 * mean(returns$MSFT))
+```
+
+### Driver 2: The choice of portfolio weights
+
+Investors can optimize the choice of weight to obtain the highest risk-adjusted return, as measured by the portfolio Sharpe ratio.
+
+In the special case of investing the total portfolio value in only two assets, there is only one weight to determine, because the weight on the second asset equals one minus the weight of the first asset. 
+
+```{r}
+# Create a grid
+grid <- seq(0, 1, 0.01)
+
+# Initialize an empty vector for sharpe ratios
+vsharpe <- rep(NA, times = length(grid))
+
+# Create a for loop to calculate sharpe ratios
+for(i in 1:length(grid)) {
+	weight <- grid[i]
+	preturns <- weight * returns$AAPL + (1 - weight) * returns$MSFT
+	vsharpe[i] <- SharpeRatio.annualized(preturns)
+}
+
+# Plot weights and sharpe ratio
+plot(grid, vsharpe, xlab = "Weights", ylab = "Ann. Sharpe ratio")
+abline(v = grid[vsharpe == max(vsharpe)], lty = 3)
+```
+### Driver 3: The correlation between the asset returns
+
+The third driver of portfolio performance is the correlation between the asset returns. Generally speaking, the correlation tells you how two asset returns tend to move together.
+
+The correlation of assets has important consequences in overall portfolio performance. This correlation is important because it can reduce volatility through diversification, or reducing overall correlation. In fact, the lower the correlation, the more succesful the portfolio tends to be in regards to partially offsetting large losses in one asset with only a minor loss, or even a gain, in another asset.
+
+In the extreme case of two identical asset returns, the correlation will be 1, and there is no diversification potential. In the other extreme case where, if one asset return is above average, and the other is almost always below average, the correlation is negative. The correlation is 0 when the asset returns are linearly independent of each other. Note that interdependency can still exist on a non-linear level even when the correlation is 0.
+
+#### Interpreting correlation
+
+Now you will learn how to compute the correlation between equity returns and bond returns. Just like volatilities, these correlations are dynamic. Therefore you need to distinguish between a static analysis that calculates correlations over a complete sample, and a dynamic analysis that calculates correlations over a rolling sample. This is a similar analysis as you did for the time-varying performance evaluation in terms of mean return and volatility.
+
+In this exercise you will learn 3 new functions from the PerformanceAnalytics package: **chart.Scatter()**, **chart.Correlation()**, and **chart.RollingCorrelation()**.
+
+```{r}
+# Create a scatter plot
+chart.Scatter(returns$MSFT, returns$AAPL, type = "p")
+
+# Find the correlation
+cor(returns$AAPL, returns$MSFT)
+
+# Merge returns_equities and returns_bonds 
+returns <- merge(returns$AAPL, returns$MSFT)
+
+# Find and visualize the correlation using chart.Correlation
+chart.Correlation(returns)
+
+# Visualize the rolling estimates using chart.RollingCorrelation
+chart.RollingCorrelation(returns$AAPL, returns$MSFT)
+
+
+```
+
+### Matrix Notation
+
+$\mathbf{w}$: the $N \times 1$ column-matrix of portfolio weights
+$$
+\mathbf{w} = 
+\begin{bmatrix}
+w_1 \\ w_2 \\ \vdots \\ w_N
+\end{bmatrix}
+$$
+$\mathbf{R}$: the $N \times 1$ column-matrix of asset returns
+$$
+\mathbf{R} = 
+\begin{bmatrix}
+R_1 \\ R_2 \\ \vdots \\ R_N
+\end{bmatrix}
+$$
+$\mathbf{\mu}$: the $N \times 1$ column-matrix of expected returns
+$$
+\mathbf{\mu} = 
+\begin{bmatrix}
+\mu_1 \\ \mu_2 \\ \vdots \\ \mu_N
+\end{bmatrix}
+$$
+
+$\mathbf{\Sigma}$: the $N \times N$ cavariance matrix of the $N$ asset returns
+
+$$
+\mathbf{\Sigma} = 
+ \begin{pmatrix}
+  \sigma_{11}^2 & \sigma_{12} & \cdots & \sigma_{1N} \\
+  \sigma_{21} & \sigma_{22}^2 & \cdots & \sigma_{2N} \\
+  \vdots  & \vdots  & \ddots & \vdots  \\
+  \sigma_{N1} & \sigma_{N2} & \cdots & \sigma_{NN}^2 
+ \end{pmatrix}
+$$
+### General Case
+- Portfolio Return
+$$
+\mathbf{w}'\mathbf{R}
+$$
+
+- Portfolio Expected Return
+$$
+ \mathbf{w}'\mathbf{\mu}
+$$
+- Portfolio Variance
+$$
+ \mathbf{w}'\mathbf{\Sigma}\mathbf{w}
+$$
+
+```{r}
+# Create a vector of returns 
+means <- apply(returns, 2, "mean")
+  
+# Create a vector of standard deviation
+sds <- apply(returns, 2, "sd")
+
+# Create a scatter plot
+plot(sds, means)
+text(sds, means, labels = colnames(returns), cex = 0.7)
+abline(h = 0, lty = 3)
+```
+
+```{r}
+# Create a matrix with variances on the diagonal
+diag_cov <- diag(sds^2)
+
+# Create a covariance matrix of returns
+cov_matrix <- cov(returns)
+
+# Create a correlation matrix of returns
+cor_matrix <- cor(returns)
+
+# Verify covariances equal the product of standard deviations and correlation
+current <- cor_matrix[1,2] * sds[1] * sds[2]
+names(current) <- NULL
+all.equal(cov_matrix[1,2], current[1])
+```
+
+```{r}
+# Create a weight matrix w
+w <- as.matrix(c(.5,.5))
+
+# Create a matrix of returns
+mu <- as.matrix(means)
+
+# Calculate portfolio mean monthly returns
+t(w) %*% mu
+
+# Calculate portfolio volatility
+sqrt(t(w) %*% cov_matrix %*% w)
+```
+
+### Risk Budgeting
+
+How much of the portfolio risk is caused by individual positions? 
+
+Capital Allocation Budget vs Portfolio Volatility Risk
+
+- Portofolio Volatility in Risk Contribution ($RC$)
+
+$$
+Portfolio Volatility = \sum_{i=1}^N RC_i \\
+\text{where: } RC_i = \frac{w_i(\Sigma w)_i}{\sqrt{w'\Sigma w}} 
+$$
+- Percentage Risk Contribution
+$$
+\% RC_i = \frac{RC_i}{PortfolioVolatility} \\
+\text{where: } \sum_{i=1}^N \%RC_i =1
+$$
+Relatively more risky assets: $\%RC_i \gt w_i$
+Relatively less risky assets: $\%RC_i \lt w_i$
+
+```{r}
+# Create portfolio weights
+weights <- c(.5,.5)
+
+# Create volatility budget
+vol_budget <- StdDev(returns, portfolio_method = "component", weights = weights)
+
+# Make a table of weights and risk contribution
+weights_percrisk <- cbind(weights, vol_budget$pct_contrib_StdDev)
+colnames(weights_percrisk) <- c("weights", "perc vol contrib")
+
+# Print the table
+weights_percrisk
+```
+
+## Portfolio Optimization (Markowitz)
+
+### Objectives
+
+- Maximize expected return
+- Minimize variance
+- Maximize Sharpe Ration
+
+### A note on contraints 
+
+- Only positive weights
+- Weights sum to 1 (fully invested)
+- Portfolio expected return equals a target value
+
+**No other portfolio exists with a higher expected return at the same or lowe level of volatility (no portfolio on the upper left when y=meanPortfolioReturn and x=volatility)**
+
+```{r}
+# Create a vector of row means
+ew_preturns <- rowMeans(returns)
+
+# Cast the numeric vector back to an xts object
+ew_preturns <- xts(ew_preturns, order.by = time(returns))
+
+# Plot ew_preturns
+plot.zoo(ew_preturns)
+```
+
+#### Finding the mean-variance efficient portfolio
+
+```{r}
+# Load tseries
+library(tseries)
+
+# Create an optimized portfolio of returns
+opt <- portfolio.optim(returns)
+
+# Create pf_weights
+pf_weights <- opt$pw
+
+# Assign asset names
+names(pf_weights) <- colnames(returns)
+
+# Select optimum weights opt_weights
+opt_weights <- pf_weights[pf_weights>= 0.01]
+opt_weights
+# Barplot of opt_weights
+barplot(opt_weights)
+
+# Print expected portfolio return and volatility
+opt$pm
+opt$ps
+```
+
+#### Effect of the return target
+
+```{r}
+# Create portfolio with target return of average returns 
+pf_mean <- portfolio.optim(returns, pm = mean(returns))
+
+# Create portfolio with target return 10% greater than average returns
+pf_10plus <- portfolio.optim(returns, pm = 1.1 * mean(returns))
+
+# Print the standard deviations of both portfolios
+pf_mean$ps
+pf_10plus$ps
+
+# Calculate the proportion increase in standard deviation
+(pf_10plus$ps - pf_mean$ps) / (pf_mean$ps)
+
+```
+
+#### Imposing weight constraints
+
+Investors are often constrained by the maximum values allowed for the portfolio weights. These constraints can actually be an advantage. The advantage of a maximum weight constraint is that the subsequent portfolio will be less concentrated in certain assets. There is a disadvantage to this though. The disadvantage is that the same target return may no longer be possible or will be obtained at the expense of a higher volatility. 
+
+```{r}
+# Create vectors of maximum weights
+max_weights1 <- rep(1, ncol(returns))
+max_weights2 <- rep(0.8, ncol(returns))
+max_weights3 <- rep(0.6, ncol(returns))
+
+# Create an optimum portfolio with max weights of 100%
+opt1 <- portfolio.optim(returns, reshigh = max_weights1)
+
+# Create an optimum portfolio with max weights of 10%
+opt2 <- portfolio.optim(returns, reshigh = max_weights2)
+
+
+# Create an optimum portfolio with max weights of 5%
+opt3 <- portfolio.optim(returns, reshigh = max_weights3)
+
+
+# Calculate how many assets have a weight that is greater than 1% for each portfolio
+sum(opt1$pw > .01)
+sum(opt2$pw > .01)
+sum(opt3$pw > .01)
+
+# Print portfolio volatilites 
+opt1$ps
+opt2$ps
+opt3$ps
+```
+
+### The Efficient Frontier
+#### Computing the efficient frontier using a grid of target returns
+
+```{r}
+# Calculate each stocks mean returns
+stockmu <- colMeans(returns)
+
+# Create a grid of target values
+grid <- seq(0.001, max(stockmu), length.out = 50)  
+
+# Create empty vectors to store means and deviations
+vpm <- vpsd <- rep(NA, length(grid))
+
+# Create an empty matrix to store weights
+mweights <- matrix(NA, 50, 2)
+
+# Create your for loop
+for(i in 1:length(grid)) {
+  opt <- portfolio.optim(x = returns , pm = grid[i])
+  vpm[i] <- opt$pm
+  vpsd[i] <- opt$ps
+  mweights[i, ] <- opt$pw
+}
+
+plot.zoo(vpsd, vpm, type="l", ylim = c(0, max(vpm)))
+plot.zoo(vpsd, vpm, type="l")
+```
+
+#### The minimum variance and maximum Sharpe ratio portfolio
+
+```{r}
+rf = 0
+
+# Create weights_minvar as the portfolio with the least risk
+weights_minvar <- mweights[vpsd == min(vpsd), ]
+
+# Calculate the Sharpe ratio
+vsr <- (vpm - rf) / vpsd
+
+# Create weights_max_sr as the portfolio with the maximum Sharpe ratio
+weights_max_sr <- mweights[vsr == max(vsr)]
+
+# Create barplot of weights_minvar and weights_max_sr
+# par(mfrow = c(2, 1), mar = c(3, 2, 2, 1))
+barplot(weights_minvar[weights_minvar > 0.01], main = "Min Variance", ylim = c(0,1))
+barplot(weights_max_sr[weights_max_sr > 0.01], main = "Max Sharpe Ratio", ylim = c(0,1))
+```
+
+#### In-Sample vs Out-of-Sample Evaluation
+
+- Split-sample evaluation
+
+```{r}
+# Create returns_estim 
+returns_estim <- window(returns, start = start(returns), end = index(returns[2262,]))
+
+# Create returns_eval
+returns_eval <- window(returns, start = index(returns[2263,]), end = end(returns))
+
+# Create vector of max_weights
+max_weights <- rep(0.8, ncol(returns))
+
+# Create portfolio with estimation sample 
+pf_estim <- portfolio.optim(returns_estim, reshigh = max_weights)
+
+# Create portfolio with evaluation sample
+pf_eval <- portfolio.optim(returns_eval, reshigh = max_weights)
+
+# Create a scatter plot
+plot(pf_estim$pw, pf_eval$pw)
+abline(h = 0, b = 1, lty = 3)
+```
+
+- Out of sample performance evaluation
+
+```{r}
+# Create returns_pf_estim
+returns_pf_estim <- Return.portfolio(returns_estim, pf_estim$pw, rebalance_on = "months")
+
+# Create returns_pf_eval
+returns_pf_eval <- Return.portfolio(returns_eval, pf_estim$pw, rebalance_on = "months")
+
+# Print a table for your estimation portfolio
+table.AnnualizedReturns(returns_pf_estim)
+
+# Print a table for your evaluation portfolio
+ table.AnnualizedReturns(returns_pf_eval)
+```
+
+# TODO
+setup algorithm to find next day weights

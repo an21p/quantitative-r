@@ -1,0 +1,248 @@
+---
+title: "xts/zoo Notebook"
+output:
+  html_document:
+    df_print: paged
+---
+
+eXtensible Time Series
+Matrix + Index
+
+```{r}
+library(xts)
+# Create the object data using 5 random numbers
+data = rnorm(5)
+
+# Create dates as a Date class object starting from 2016-01-01
+dates <- seq(as.Date("2016-01-01"), length = 5, by = "days")
+
+# Use xts() to create smith
+smith <- xts(x = data, order.by = dates)
+
+# Create bday (1899-05-08) using a POSIXct date class object
+bday <- as.POSIXct("1899-05-08")
+
+# Create hayek and add a new attribute called born
+hayek <- xts(x = data, order.by = dates, born = bday)
+```
+Core Data, Index and Attributes within the xts object
+
+```{r}
+# Extract the core data of hayek
+hayek_core = coredata(hayek)
+hayek_core
+# View the class of hayek_core
+class(hayek_core)
+
+# Extract the index of hayek
+hayek_index = index(hayek)
+hayek_index
+# View the class of hayek_index
+class(hayek_index)
+
+xtsAttributes(hayek)
+```
+
+## Importing, Exporting and Converting
+
+```{r}
+## Importing
+# as.xts(read.table("filename"))
+# as.xts(read.csv("filename"))
+# as.xts(read.zoo("filename"))
+
+## Exporting
+# write.zoo(x, "filename", sep=',', col.names = c("Date", "Sunspots"))
+# saveRDS(x, "filename")
+
+## Converting
+data(sunspots)
+class(sunspots)
+
+sunspots_xts <- as.xts(sunspots)
+class(sunspots_xts)
+
+head(sunspots_xts, n=2)
+```
+
+Importing Example
+
+```{r}
+# Create dat by reading tmp_file
+dat = read.csv("tmp.csv")
+head(dat)
+
+# Convert dat into xts
+dat_xts <- xts(dat[-1], order.by = as.yearmon(dat[,1], "%b %Y"))
+
+# Read tmp_file using read.zoo
+f <- function(x) as.yearmon(x, "%b %Y")
+dat_zoo <- read.zoo("tmp.csv", index.column = 1, sep = ",", header=T, FUN = f)
+
+# Convert dat_zoo to xts
+dat_xts_2 <- as.xts(dat_zoo)
+```
+
+## Time based queries
+ISO 8601:2004
+
+- One and two sided intervals
+"2004"
+"2001/2005"
+
+- Truncated Representation
+"201402/03"
+
+- Time support
+"2014-02-22 08:30:00"
+
+- Repeating intervals
+"T08:00/T09:00"
+
+```{r}
+# Select all of 1800 from x
+x_1800 <- dat_xts_2["1800/1801"]
+
+# Select January 1, 1800 to March, 1800
+jan_march <- dat_xts_2["1800/1800-03"]
+
+# Verify that jan_march contains 3 rows
+3 == length(jan_march)
+
+index <- dat_xts_2["1800/1800-03", which.i = T]
+index
+```
+
+## First and Last
+
+```{r}
+# Create lastweek using the last 3 months of dat_xts_2
+lastthreemonths <- last(dat_xts_2, "3 months")
+
+# Print the first 2 observations in lastthreemonths
+first(lastthreemonths, "2 months")
+```
+
+## Adding based on date vs adding to all
+
+```{r}
+head(dat_xts_2, n=5)
+dat_first_2 = first(dat_xts_2, "2 months")
+new_dat <- dat_xts_2 + dat_first_2
+head(new_dat, n=5)
+
+new_data_plus_5 <- dat_xts_2 + 5
+head(new_data_plus_5, n=5)
+
+```
+
+## More adding
+
+```{r}
+# Add a to b, and fill all missing rows of b with 0
+new_fill_0 <- dat_xts_2 + merge(dat_first_2, index(dat_xts_2), fill = 0)
+head(new_fill_0, n=5)
+
+# Add a to b and fill NAs with the last observation
+new_fill_locf <- dat_xts_2 + merge(dat_first_2, index(dat_xts_2), fill = na.locf)
+head(new_fill_locf, n=5)
+
+```
+
+## Merging Columns
+
+```{r}
+a <- xts(1:4, order.by = as.Date("2018-01-01")+0:3)
+b <- xts(10:13, order.by = as.Date("2018-01-01")+2:5)
+merge(a, b)  #outer
+merge(a, b, join = "inner")
+merge(a, b, join = "left", fill = 0)
+merge(a, b, join = "right", fill = 0)
+```
+
+## Merging Rows
+
+```{r}
+rbind(a, b)
+```
+
+## Missing Values
+
+```{r}
+# na.locf(a, na.rm = T, fromLast = F)
+z <- xts(c(1, NA, NA, 4, NA), order.by = as.Date("2018-01-01")+0:4)
+cbind(z, na.locf(z), na.locf(z, fromLast = T))
+
+na.fill(z, 10)
+
+na.trim(z)
+
+na.omit(z)
+na.approx(z)
+```
+
+## Lag and Diff operations
+
+```{r}
+lag_and_diff <- merge(a, 
+      lag(a,k=1),
+      lag(a,k=2), 
+      diff(a,lag= 1 ,differences = 1),
+      diff(a,lag= 2 ,differences = 1))
+colnames(lag_and_diff) <- c("a", "1 lag", "2 lag", "1 lag diff", "2 lag diff")
+lag_and_diff
+```
+
+## Applying on time
+
+```{r}
+c <- xts(rnorm(500), order.by = as.Date("2018-01-01")+0:499)
+# Locate the months
+ep <- endpoints(c, on = "months")
+
+# Locate every two months
+ep2 <- endpoints(c, on = "months", k = 2)
+
+# METHOD 1
+# Calculate the monthly average
+monthly_average <- period.apply(c, INDEX = ep, FUN = "mean")
+
+# METHOD 2
+# Split c by month
+c_monthly <- split(c, f = "months")
+
+# Create a list of weekly means, temps_avg, and print this list
+c_avg <- lapply(X = c_monthly, FUN = mean)
+monthly_average_2 <- do.call(rbind, c_avg)
+```
+
+## Periods
+
+```{r}
+c_weekly <- to.period(c, period = "weeks")
+c_monthly <- to.period(c, period = "months")
+c_quarterly <- to.period(c, period = "quarters")
+c_yearly <- to.period(c, period = "years")
+periodicity(c)
+ndays(c)
+nyears(c)
+periodicity(c_yearly)
+nyears(c_yearly)
+.index(c_yearly)
+.indexwday(c_yearly)
+
+# ?make.index.unique
+```
+
+## Rolling
+
+```{r}
+# splits
+c_yrs <- split(c, f="years")
+c_yrs <- lapply(c_yrs, cumsum)
+c_ytd <- do.call(rbind, c_yrs)
+
+# windows
+c_rolling_average <- rollapply(c, width = 25, FUN = mean)
+```
+

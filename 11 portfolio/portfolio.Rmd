@@ -1,0 +1,343 @@
+---
+title: "Intermediate Portfolio Analysis in R"
+output:
+  html_document:
+    df_print: paged
+---
+### Mean - Standard Deviation Setup
+
+```{r}
+library(PortfolioAnalytics)
+data(indexes)
+index_returns <- indexes[,1:5]
+```
+
+```{r eval=FALSE, include=FALSE}
+port_spec <- portfolio.spec(colnames(index_returns))
+
+# add objectives
+port_spec <- add.objective(port_spec,
+                           type = "return",
+                           name = "mean")
+port_spec <- add.objective(port_spec,
+                           type = "risk",
+                           name = "StdDev")
+
+# add constraints
+port_spec <- add.constraint(port_spec, 
+                            type = "full_investment")
+port_spec <- add.constraint(port_spec, 
+                            type = "long_only")
+
+print(port_spec)
+```
+
+Run Optimization and Chart Results
+
+```{r eval=FALSE, include=FALSE}
+opt <- optimize.portfolio(index_returns, port_spec, optimize_method = "random", trace = T)
+```
+```{r eval=FALSE, include=FALSE}
+chart.RiskReward(opt, risk.col = "StdDev", return.col = "mean", chart.assets = T)
+
+# Print the results of the optimization
+print(opt)
+
+# Extract the optimal weights
+extractWeights(opt)
+
+# Chart the optimal weights
+chart.Weights(opt)
+```
+
+
+### Solvers
+
+ - Close solvers (quadreatic programming) -> FAST / EXACT
+ - Global solvers (differential evolution optimization) -> SLOWER / APPROXIATE
+ 
+### Quadratic Utility
+
+Maximise: $\mathbf{w}' \mathbf{\mu} - \lambda * \mathbf{w}' \mathbf{\Sigma}\mathbf{w}$
+Subject to:
+- $w_i \ge 0$
+- $\sum_{i=1}^N w_i = 1$
+
+Where:
+- $\mathbf{w}$ is the weight vector
+- $\mathbf{\mu}$ is the expected return vector
+- $\lambda$ is the risk aversion parameter
+- $\mathbf{\Sigma}$ is the variance - covariance matrix
+
+### Quadratic Programming Solver
+
+package **quadprog**
+
+**solve.QP()** solves problems in the form
+- $min(-\mathbf{d}'\mathbf{b}+\frac{1}{2}\mathbf{b}'\mathbf{D}\mathbf{b})$
+
+subject to:
+- $\mathbf{A}'\mathbf{b} \ge b_0$
+ 
+```{r eval=FALSE, include=FALSE}
+library(quadprog)
+# Constraint matrix
+Amat <- cbind(1, diag(ncol(index_returns)), -diag(ncol(index_returns)))
+
+# Constraint vector
+bvec <- c(1, rep(0, ncol(index_returns)), -rep(1, ncol(index_returns)))
+
+# Objective matrix
+Dmat <- 10 * cov(index_returns)
+
+# Objective vector
+dvec <- colMeans(index_returns)
+
+# Specify number of equality constraints
+meq <- 1
+
+# Solve the optimization problem
+opt <- solve.QP(Dmat, dvec, Amat, bvec, meq)
+opt
+```
+
+
+## Portfolio specs, constraints and objectives
+
+```{r}
+?portfolio.spec
+?add.constraint
+?add.objective
+```
+
+```{r include=FALSE}
+# Create the portfolio specification
+port_spec <- portfolio.spec(assets = colnames(index_returns))
+
+# Add a full investment constraint such that the weights sum to 1
+port_spec <- add.constraint(portfolio = port_spec, type = "full_investment")
+
+# Add a long only constraint such that the weight of an asset is between 0 and 1
+# port_spec <- add.constraint(portfolio = port_spec, type = "long_only")
+
+# Add weight constraint
+port_spec <- add.constraint(portfolio = port_spec, type = "box", min = 0.01, max = 0.8)
+
+# Add an objective to maximize portfolio mean return
+port_spec <- add.objective(portfolio = port_spec, type = "return", name = "mean")
+
+# Add an objective to minimize portfolio variance
+# port_spec <- add.objective(portfolio = port_spec, type = "risk", name = "var", risk_aversion = 10)
+port_spec <- add.objective(portfolio = port_spec, type = "risk", name = "StdDev")
+```
+
+## Optimization Methods
+
+```{r}
+# Solve the optimization problem
+opt_single <- optimize.portfolio(R = index_returns, portfolio = port_spec, optimize_method = "random", trace = T, search_size = 1000)
+
+# Run the optimization backtest with quarterly rebalancing
+opt_rebal <- optimize.portfolio.rebalancing(R = index_returns, portfolio = port_spec, optimize_method = "random", trace = T, search_size = 1000, rebalance_on = "quarters", training_period = 60, rolling_window = 60)
+```
+
+## Visualisation
+
+```{r}
+chart.RiskReward(opt_single, risk.col = "StdDev", return.col = "mean", chart.assets = T)
+
+# Print the results of the optimization
+print(opt_single)
+
+# Extract the objective measures for the single period optimization
+extractObjectiveMeasures(opt_single)
+
+# Extract the optimal weights
+extractWeights(opt_single)
+
+# Chart the optimal weights
+chart.Weights(opt_single)
+```
+
+```{r}
+#chart.RiskReward(opt_rebal, risk.col = "StdDev", return.col = "mean", chart.assets = T)
+
+# Print the results of the optimization
+print(opt_rebal)
+
+# Extract the objective measures for the optimization backtest
+extractObjectiveMeasures(opt_rebal)
+
+# Extract the optimal weights
+extractWeights(opt_rebal)
+
+# Chart the optimal weights
+chart.Weights(opt_rebal)
+```
+
+## Analysis
+
+```{r}
+rr_single <- Return.portfolio(index_returns, weights = extractWeights(opt_single))
+charts.PerformanceSummary(rr_single)
+```
+
+```{r}
+rr_rebal <- Return.portfolio(index_returns, weights = extractWeights(opt_rebal))
+charts.PerformanceSummary(rr_rebal)
+```
+
+## Moments
+
+- 1st moment: Expected Returns Vector
+- 2nd moment: variance-covariance matrix
+- 3rd moment: coskewness matrix
+- 4th moment: cokurtosis matrix
+
+```{r}
+# Sample vs Boudt (Factor)
+sample_moments <- set.portfolio.moments(R = index_returns, portfolio = port_spec)
+sample_moments$sigma == cov(index_returns)
+
+fit <- statistical.factor.model(R = asset_returns, k = 1)
+
+boudt_moments <- set.portfolio.moments(R = index_returns, portfolio = port_spec, method = "boudt", k=1)
+boudt_moments$sigma == extractCovariance(fit)
+
+```
+
+### Custom Moment Fucntions
+
+```{r eval=FALSE, include=FALSE}
+library(MASS)
+custom_fun <- function(R, portfolio, rob_method = "mcd") {
+  out <- list()
+  out$sigma <- cov.rob(R,method = rob_method)
+  return(out)
+}
+
+port_spec1 <- portfolio.spec(colnames(index_returns))
+port_spec1 <- add.constraint(portfolio = port_spec1, type = "full_investment")
+port_spec1 <- add.constraint(portfolio = port_spec1, type = "long_only")
+
+port_spec1 <- add.objective(portfolio = port_spec1, type = "risk", name = "StdDev")
+
+opt1 <- optimize.portfolio(index_returns, port_spec1, optimize_method = "random", momentFUN = "custom_fun", rob_method = "mcd")
+
+opt2 <- optimize.portfolio(index_returns, port_spec1, optimize_method = "random",  momentFUN = "custom_fun", rob_method = "mve")
+```
+
+```{r eval=FALSE, include=FALSE}
+# Print the results of the optimization
+print(opt1)
+
+# Extract the objective measures for the optimization backtest
+extractObjectiveMeasures(opt1)
+
+# Extract the optimal weights
+extractWeights(opt1)
+
+# Chart the optimal weights
+chart.Weights(opt1)
+
+rr1 <- Return.portfolio(index_returns, weights = extractWeights(opt1))
+charts.PerformanceSummary(rr1)
+```
+
+```{r eval=FALSE, include=FALSE}
+# Print the results of the optimization
+print(opt2)
+
+# Extract the objective measures for the optimization backtest
+extractObjectiveMeasures(opt2)
+
+# Extract the optimal weights
+extractWeights(opt2)
+
+# Chart the optimal weights
+chart.Weights(opt2)
+
+rr2 <- Return.portfolio(index_returns, weights = extractWeights(opt2))
+charts.PerformanceSummary(rr2)
+```
+
+## Objective Fucntions
+
+```{r eval=FALSE, include=FALSE}
+sr_annualised <- function(R, weights, sigma, scale, rfr) {
+  r <- Return.annualized.excess(Return.portfolio(R, weights), scale = scale, Rb = rfr)
+  
+  pasd <- sqrt(as,numeric(t(weights) %*% sigma %*% weigths)) * sqrt(scale)
+  return(r/pasd)
+}
+
+
+# Add custom objective to portfolio specification
+port_spec <- add.objective(portfolio = port_spec, type = "return", name = "sr_annualised")
+```
+
+# Example
+## Benchmark
+
+```{r}
+# Load the package
+library(PortfolioAnalytics)
+
+# Load the data
+data(edhec)
+
+# Assign the data to a variable
+asset_returns <- edhec
+
+# Create a vector of equal weights
+equal_weights <- rep(1 / ncol(asset_returns), ncol(asset_returns))
+
+# Compute the benchmark returns
+r_benchmark <- Return.portfolio(R = asset_returns, weights = equal_weights, rebalance_on = "quarters")
+colnames(r_benchmark) <- "benchmark"
+
+# Plot the benchmark returns
+plot.zoo(r_benchmark)
+charts.PerformanceSummary(r_benchmark)
+```
+## Portfolio Spec
+
+```{r}
+
+# Create the portfolio specification
+port_spec <- portfolio.spec(assets = colnames(asset_returns))
+
+# Add a full investment constraint such that the weights sum to 1
+port_spec <- add.constraint(portfolio = port_spec, type = "full_investment")
+
+# Add a long only constraint such that the weight of an asset is between 0 and 1
+port_spec <- add.constraint(portfolio = port_spec, type = "long_only")
+
+# Add an objective to minimize portfolio standard deviation
+port_spec <- add.objective(portfolio = port_spec, type = "risk", name = "StdDev")
+
+# Print the portfolio specification
+print(port_spec)
+```
+
+## Basic Optimization
+
+```{r}
+# Run the optimization
+opt_rebal_base <- optimize.portfolio.rebalancing(R = asset_returns, portfolio = port_spec, optimize_method = "random", trace = T, search_size = 1000, rebalance_on = "quarters", training_period = 60, rolling_window = 60)
+
+# Print the results
+print(opt_rebal_base)
+
+# Chart the weights
+chart.Weights(opt_rebal_base)
+
+# Compute the portfolio returns
+returns_base <- Return.portfolio(R = asset_returns, weights = extractWeights(opt_rebal_base))
+colnames(returns_base) <- "base"
+```
+
+```{r}
+port_spec_rb <- port_spec
+```
+

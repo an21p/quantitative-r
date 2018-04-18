@@ -1,0 +1,189 @@
+---
+title: "Financial Trading in R"
+output: html_notebook
+---
+
+## Setting up a strategy - I
+
+```{r eval=FALSE, include=FALSE}
+# https://stackoverflow.com/questions/44891437/install-quantstrat-for-r-latest-r-versioninstall.packages("devtools")
+require(devtools)
+install_github("braverock/blotter") # dependency
+install_github("braverock/quantstrat")
+install_github("braverock/FinancialInstrument")
+```
+
+```{r}
+library(quantstrat)
+Sys.setenv(TZ = "UTC")
+currency("USD")
+initdate = "2008-01-01"
+from = "2009-01-01"
+to = "2018-03-29"
+```
+
+
+```{r}
+library(quantmod)
+#stocks <- new.env()
+symbls <- c("AAPL", "MSFT")
+stock(symbls, currency="USD", multiplier = 1)
+
+getSymbols(symbls, auto.assign = T, index.class=c("POSIXt","POSIXct"))
+for (s in symbls) {
+  assign(s, adjustOHLC(get(s), use.Adjusted = T))
+}
+
+ls(envir = FinancialInstrument:::.instrument)
+
+```
+
+## Setting up a strategy - II
+
+```{r}
+tradesize <- 100000 # smaller than initeq
+initeq <- tradesize*length(symbols)
+```
+
+Objects
+ - Account
+   - Portfolio (1+)
+     - Strategy (1+)
+
+```{r}
+strategy.st <- portfolio.st <- account.st <- "firestrat"
+
+```
+
+If strategy exists in the environment it CANNOT be re-run.
+
+```{r}
+rm.strat(strategy.st)
+```
+
+Need to initialize
+- Portfolio
+- Account
+- Orders
+- Strategy
+
+```{r}
+initPortf(portfolio.st, symbols = symbls, initDate = initdate, currency = "USD")
+addPortfInstr(portfolio.st, symbols = symbls)
+
+initAcct(account.st, portfolios = portfolio.st, initDate = initdate, currency = "USD", initEq = initeq)
+
+initOrders(portfolio.st, initdate)
+
+strategy(strategy.st, store = T)
+```
+
+### Adding a moving average to financial data
+
+```{r}
+# Plot the closing prices of SPY
+plot(Cl(AAPL))
+
+# Add a 200-day SMA using lines()
+lines(SMA(Cl(AAPL), n = 200), col = "red")
+lines(SMA(Cl(AAPL), n = 50), col = "blue")
+lines(RSI(Cl(AAPL), n = 3), col = "yellow")
+```
+
+## Indicators
+
+```{r}
+# Create a 200-day SMA
+apple_sma <- SMA(Cl(AAPL), n=200)
+
+# Create an RSI with a 3-day lookback period
+apple_rsi <- RSI(Cl(AAPL), n =3)
+```
+
+## Indicator Step
+
+```{r}
+add.indicator(strategy = strategy.st, name = "SMA", arguments = list(x = quote(Cl(AAPL)), n = 200), label = "SMA200")
+
+add.indicator(strategy = strategy.st, name = "SMA", arguments = list(x = quote(Cl(AAPL)), n = 50), label = "SMA50")
+
+add.indicator(strategy = strategy.st, name = "RSI", arguments = list(price = quote(Cl(AAPL)), n = 3), label = "RSI_3")
+```
+
+### Signals
+
+```{r}
+add.signal(strategy = strategy.st, name = "sigCrossover", arguments = list(columns = c("SMA50", "SMA200"), relationship = "gt"), label = "longfilter")
+
+add.signal(strategy = strategy.st, name = "sigComparison", arguments = list(columns = c("SMA50", "SMA200"), relationship = "lt"), label = "filterexit")
+
+# T sigCrossover
+# F sigComparison
+add.signal(strategy = strategy.st, name = "sigThreshold", arguments = list(column = "RSI_3", threshold = 20, cross = F, relationship = "lt"), label = "longthreshold")
+
+add.signal(strategy = strategy.st, name = "sigThreshold", arguments = list(column = "RSI_3", threshold = 80, cross = T, relationship = "gt"), label = "thresholdexit")
+
+add.signal(strategy = strategy.st, name = "sigFormula", arguments = list(formula = "longthreshold & longfilter", cross = T), label = "longentry")
+
+# Create your dataset: test
+test_init <- applyIndicators(strategy.st, mktdata = AAPL)
+test <- applySignals(strategy = strategy.st, mktdata = test_init)
+```
+
+## Rules
+
+```{r}
+add.rule(strategy.st, name = "ruleSignal", arguments = list(sigcol = "filterexit", sigval = TRUE, orderqty = "all", ordertype = "market", orderside = "long", replace = FALSE, prefer = "Open"), type = "exit")
+ 
+add.rule(strategy.st, name = "ruleSignal", arguments = list(sigcol = "longentry", sigval = TRUE, orderqty = "all", ordertype = "market", orderside = "long", replace = FALSE, prefer = "Open"), type = "enter")
+```
+
+## Order Sizing
+
+```{r}
+# add.rule( ..., osFUN = osMaxDollar, tradeSize = tradesize, maxSize = tradesize)
+```
+
+## Analysis
+
+```{r}
+# Use applyStrategy() to apply your strategy. Save this to out
+out <- applyStrategy(strategy = strategy.st, portfolios = portfolio.st)
+
+# Update your portfolio (portfolio.st)
+updatePortf(portfolio.st)
+daterange <- time(getPortfolio(portfolio.st)$summary)[-1]
+
+# Update your account (account.st)
+updateAcct(account.st, daterange)
+updateEndEq(account.st)
+
+tStats <- tradeStats(portfolio.st)
+```
+
+## Visualization
+
+```{r}
+sma50 <- SMA(Cl(AAPL), n=50)
+sma200 <- SMA(Cl(AAPL), n=200)
+rsi <- RSI(Cl(AAPL), n=3)
+
+chart.Posn(portfolio.st, Symbol = "AAPL")
+add_TA(sma50, on = 1, col = "blue")
+add_TA(sma200, on = 1, col = "red")
+add_TA(rsi)
+```
+
+## Additional
+
+```{r}
+portpl <- .blotter$portfolio.firestrat$summary$Net.Trading.PL
+SharpeRatio.annualized(portpl, geometric=FALSE)
+
+# Get instrument returns
+instrets <- PortfReturns(portfolio.st)
+
+# Compute Sharpe ratio from returns
+SharpeRatio.annualized(instrets, geometric = FALSE)
+```
+

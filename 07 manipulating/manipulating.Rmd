@@ -1,0 +1,78 @@
+---
+title: "Manipulating Time Series Data in R"
+output: html_notebook
+---
+
+```{r}
+library(xts)
+data("sunspots")
+#View the structure of the sunspots data
+str(sunspots)
+
+#Examine the first five rows of the sunspots_ data
+head(sunspots, n = 5)
+
+#Identify class of the column containing date information
+class(sunspots)
+
+sunspots_xts <- as.xts(sunspots)
+str(sunspots_xts)
+
+# Identify the periodicity of sunspots_xts
+periodicity(sunspots_xts)
+
+# Identify the number of periods in sunspots_xts
+nmonths(sunspots_xts)
+```
+
+## Visualisation
+
+```{r}
+
+sunspots_xts <- merge(sunspots_xts, lag(sunspots_xts, k=100))
+colnames(sunspots_xts) <- c("x", "lag100")
+sunspots_xts <- na.omit(sunspots_xts)
+head(sunspots_xts, n=2)
+
+plot.xts(sunspots_xts$x)
+
+plot.xts(sunspots_xts$lag1)
+
+plot.zoo(sunspots_xts, plot.type = "multiple", ylab = colnames(sunspots_xts))
+
+plot.zoo(sunspots_xts, plot.type = "single", lty = 1:2)
+legend("right", lty = 1:2, legend = colnames(sunspots_xts))
+
+
+```
+
+## Saving (RDS)
+
+```{r}
+# Save your xts object to rds file using saveRDS
+saveRDS(object = sunspots_xts, file = "sunspots_xts.rds")
+
+# Read your flights_xts data from the rds file
+sunspots_xts2 <- readRDS("sunspots_xts.rds")
+head(sunspots_xts2, n=2)
+```
+
+## Saving (CSV)
+
+```{r}
+# Export your xts object to a csv file using write.zoo
+write.zoo(sunspots_xts, file = "sunspots_xts.csv", sep = ",")
+
+# Open your saved object using read.zoo
+sunspots_xts_tmp <- read.zoo("sunspots_xts.csv", sep = ",", FUN = function(w) as.yearmon(w, "%b %Y"), header = TRUE, index.column = 1)
+
+# Encode your new object back into xts
+sunspots_xts3 <- as.xts(sunspots_xts_tmp)
+head(sunspots_xts3, n=2)
+```
+
+## Workflow
+
+1. make sure all data is xts
+2. examine and adjust *periodicity*
+3. merge

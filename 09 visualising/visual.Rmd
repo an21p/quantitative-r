@@ -1,0 +1,134 @@
+---
+title: "Visualizing Time Series Data in R"
+output: html_notebook
+---
+
+## Importing a Stock
+
+```{r}
+library(quantmod)
+symbls = c("AAPL", "MSFT")
+getSymbols(symbls, auto.assign = T)
+head(AAPL, n=2)
+str(AAPL)
+str(MSFT)
+portfolio <- merge(ROC(AAPL$AAPL.Adjusted), ROC(MSFT$MSFT.Adjusted))
+colnames(portfolio) <- c("AAPL", "MSFT")
+```
+# Univariate Analysis
+
+## Visualising using plot.zoo() function
+
+```{r}
+plot.zoo(AAPL$AAPL.Adjusted, main = "Apple Adjusted Close Price over Time", sub = "From the 3rd of January 2017 to the 28th of March 2018", xlab = "Date", ylab = "Adjusted Close", xy.labels = T, lwd = 2, type = "l", col = "blue")
+
+plot.zoo(AAPL$AAPL.Volume, main = "Apple Volume over Time", sub = "From the 3rd of January 2017 to the 28th of March 2018", xlab = "Date", ylab = "Volume", xy.labels = T, lwd = 2, type = "l", col = "blue")
+```
+
+## Highlight Events
+
+```{r}
+# Plot the "citigroup" time series
+plot.zoo(AAPL$AAPL.Adjusted, main = "Apple")
+
+# Create vert_line to identify January 4th, 2016 in citigroup
+vert_line <- which(index(AAPL$AAPL.Adjusted) == as.Date("2010-11-08"))
+
+# Add a red vertical line using vert_line
+abline(v = .index(AAPL$AAPL.Adjusted)[vert_line], col = "red")
+
+# Create hori_line to identify the average price of citigroup
+hori_line <- mean(AAPL$AAPL.Adjusted)
+
+# Add a blue horizontal line using hori_line
+abline(h = hori_line, col = "blue")
+```
+
+
+## Highlight Period
+
+```{r}
+library(PerformanceAnalytics)
+# Create period to hold the 3 months of 2015
+period <- c("2010-01/2016-01")
+
+# Highlight the first three months of 2015 
+chart.TimeSeries(AAPL$AAPL.Adjusted, period.areas = period)
+
+# Highlight the first three months of 2015 in light grey
+chart.TimeSeries(AAPL$AAPL.Adjusted, period.areas = period, period.color = "red")                   
+```
+
+## Returns 
+
+```{r}
+# Create a time series called rtn
+rtn <- ROC(AAPL$AAPL.Adjusted)
+rtn <- na.omit(rtn)
+class(rtn)
+# Plot Apple daily price and daily returns 
+plot.zoo(AAPL$AAPL.Adjusted, main="Apple stock price")
+plot.zoo(rtn, main="Apple stock returns")
+```
+
+## Histograms
+
+```{r}
+hist(rtn,
+     breaks = 20,
+     main = "Apple return distribution",
+     probability = T,
+     xlab = "")
+lines(density(rtn), lwd=2, col="red")
+```
+
+
+## Box and Whisker
+
+```{r}
+boxplot(coredata(rtn),
+     horizontal = T,
+     main = "Apple return distribution")
+```
+
+
+## Autocorrelation
+
+```{r}
+acf(rtn,
+    lag.max = 60,
+     main = "Apple return autocorrelation")
+
+pacf(rtn,
+    lag.max = 60,
+     main = "Apple return patial-autocorrelation")
+```
+
+
+
+## QQ-plots
+
+```{r}
+# Create q-q plot
+qqnorm(rtn, main="Apple return QQ-plot")
+
+# Add a red line showing normality
+qqline(rtn,col="red")
+```
+
+
+# Multivariate Analysis
+
+```{r}
+plot.zoo(portfolio, plot.type = "single")
+plot.zoo(portfolio, plot.type = "multiple")
+
+# Draw the scatterplot
+plot(x=coredata(portfolio$AAPL), y=coredata(portfolio$MSFT))
+
+# Draw a regression line
+abline(reg=lm(coredata(portfolio$MSFT)~coredata(portfolio$AAPL)), col="red", lwd=2)
+
+pairs(coredata(portfolio), lower.panel = NULL)
+```
+
